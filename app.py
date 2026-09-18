@@ -90,6 +90,15 @@ def speak_text(text_to_speak: str):
     """
     components.html(js_code, height=0)
 
+def stop_speech():
+    """Immediately stops any active browser speech synthesis playback."""
+    js_code = """
+        <script>
+            window.speechSynthesis.cancel();
+        </script>
+    """
+    components.html(js_code, height=0)
+
 # Sidebar
 with st.sidebar:
     st.markdown("## 🌿 Mitra AI")
@@ -98,7 +107,7 @@ with st.sidebar:
     total_logs = fetch_total_count()
     st.metric(label="Total Wellness Check-ins", value=total_logs)
     st.caption("🧠 **RAG Engine:** ChromaDB Memory Active")
-    st.caption("🎙️ **Voice Engine:** Web Speech Synthesis Active")
+    st.caption("🎙️ **Voice Engine:** Microphone & Speech Synthesis Active")
 
 # Hero Banner
 st.markdown("""
@@ -110,52 +119,102 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# Initialize Session State
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
 tab_chat, tab_analytics = st.tabs(["💬 Chat & Listen", "📊 Mood History"])
 
 with tab_chat:
+    # Render existing messages
+    for idx, msg in enumerate(st.session_state.messages):
+        with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🌿"):
+            if msg["role"] == "user":
+                if msg.get("is_audio"):
+                    st.caption("🎙️ *Spoken voice message*")
+                st.markdown(msg["content"])
+            else:
+                rec = msg["data"]
+                if msg.get("has_rag"):
+                    st.markdown("<div class='rag-badge'>🧠 Recalled relevant past reflections via ChromaDB</div>", unsafe_allow_html=True)
+
+                st.markdown(f"**Deep Reflection**\n\n{rec['mood_analysis']}")
+                st.markdown(f"""
+                <div class="reset-chip">
+                    <strong style="color: #38bdf8; font-size: 1.05rem;">⚡ Sensory Reset Exercise</strong><br><br>
+                    {rec['micro_exercise']}
+                </div>
+                <div class="journal-chip">
+                    <strong style="color: #a855f7; font-size: 1.05rem;">✍️ Creative Exploration Prompt</strong><br><br>
+                    <em>"{rec['journal_prompt']}"</em>
+                </div>
+                """, unsafe_allow_html=True)
+
+                search_url = f"https://www.youtube.com/results?search_query={rec['youtube_search_query'].replace(' ', '+')}"
+                st.markdown(f"▶️ **Suggested Soundscape:** [{rec['youtube_search_query']}]({search_url})")
+
+                # Voice Playback Controls (Listen / Stop)
+                btn_col1, btn_col2 = st.columns([1, 1])
+                with btn_col1:
+                    if st.button("🔊 Listen to Mitra", key=f"listen_{idx}"):
+                        audio_script = f"{rec['mood_analysis']}. Here is your reset exercise: {rec['micro_exercise']}"
+                        speak_text(audio_script)
+                with btn_col2:
+                    if st.button("🛑 Stop Listening", key=f"stop_{idx}"):
+                        stop_speech()
+
+    # Inputs: Microphone Audio + Text Chat
+    st.markdown("**Record your voice or type below:**")
+    audio_val = st.audio_input("🎙️ Record Voice Check-in")
     user_prompt = st.chat_input("Talk to Mitra... how is your day going?")
 
-    if user_prompt:
+    active_input = None
+    is_audio_input = False
+
+    if audio_val is not None:
+        active_input = audio_val.read()
+        is_audio_input = True
+    elif user_prompt:
+        active_input = user_prompt
+        is_audio_input = False
+
+    if active_input is not None:
+        user_display = "🎙️ Spoken Voice Note" if is_audio_input else active_input
+        st.session_state.messages.append({"role": "user", "content": user_display, "is_audio": is_audio_input})
+        
         with st.chat_message("user", avatar="👤"):
-            st.markdown(user_prompt)
+            st.markdown(user_display)
 
         with st.chat_message("assistant", avatar="🌿"):
             with st.spinner("Mitra is listening deeply and weaving a creative response..."):
                 try:
-                    rag_memory = retrieve_relevant_context(user_prompt, n_results=2)
-                    rec = analyze_vibe_and_recommend(user_prompt, rag_context=rag_memory)
+                    rag_memory = retrieve_relevant_context("recent emotional check-in" if is_audio_input else active_input, n_results=2)
+                    rec = analyze_vibe_and_recommend(active_input, rag_context=rag_memory)
 
-                    save_checkin(user_prompt, rec)
-                    store_reflection(str(uuid.uuid4()), user_prompt, rec.mood_analysis)
+                    save_checkin("🎙️ [Voice Input]" if is_audio_input else active_input, rec)
+                    store_reflection(str(uuid.uuid4()), "Voice Reflection" if is_audio_input else active_input, rec.mood_analysis)
 
-                    if rag_memory != "No prior relevant reflections found.":
-                        st.markdown("<div class='rag-badge'>🧠 Recalled relevant past reflections via ChromaDB</div>", unsafe_allow_html=True)
+                    rec_dict = {
+                        "mood_analysis": rec.mood_analysis,
+                        "micro_exercise": rec.micro_exercise,
+                        "journal_prompt": rec.journal_prompt,
+                        "youtube_search_query": rec.youtube_search_query
+                    }
 
-                    st.markdown(f"**Deep Reflection**\n\n{rec.mood_analysis}")
-                    
-                    st.markdown(f"""
-                    <div class="reset-chip">
-                        <strong style="color: #38bdf8; font-size: 1.05rem;">⚡ Sensory Reset Exercise</strong><br><br>
-                        {rec.micro_exercise}
-                    </div>
-                    <div class="journal-chip">
-                        <strong style="color: #a855f7; font-size: 1.05rem;">✍️ Creative Exploration Prompt</strong><br><br>
-                        <em>"{rec.journal_prompt}"</em>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    has_rag = (rag_memory != "No prior relevant reflections found.")
 
-                    search_url = f"https://www.youtube.com/results?search_query={rec.youtube_search_query.replace(' ', '+')}"
-                    st.markdown(f"▶️ **Suggested Soundscape:** [{rec.youtube_search_query}]({search_url})")
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "data": rec_dict,
+                        "has_rag": has_rag
+                    })
 
-                    # Voice Output Trigger Button
-                    if st.button("🔊 Listen to Mitra"):
-                        audio_script = f"{rec.mood_analysis}. Here is your reset exercise: {rec.micro_exercise}"
-                        speak_text(audio_script)
+                    st.rerun()
 
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
-    # Recent Reflections Section
+    # History Section
     st.divider()
     st.markdown("### 📜 Recent Reflections")
     history = fetch_history()
