@@ -1,6 +1,8 @@
+import uuid
 import streamlit as st
 from agent import analyze_vibe_and_recommend
 from database import init_db, save_checkin, fetch_history, fetch_total_count
+from rag_memory import store_reflection, retrieve_relevant_context
 
 # Initialize SQLite Database
 init_db()
@@ -13,71 +15,119 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom High-Contrast Theme (Ensures readability in light & dark mode)
+# Light Serene Aesthetics & Card Layout Styling
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
+    
     html, body, [class*="css"] {
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
+    
+    /* Light Serene Ambient Background */
     .stApp {
-        background-color: #0f172a !important;
-        color: #f8fafc !important;
+        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+        color: #0f172a !important;
     }
+    
+    /* High Contrast Typography */
     .stMarkdown, p, h1, h2, h3, h4, span, label {
-        color: #f8fafc !important;
+        color: #0f172a !important;
     }
-    .stTextArea textarea {
-        background-color: #1e293b !important;
-        color: #f8fafc !important;
-        border: 1px solid #334155 !important;
-        border-radius: 12px !important;
-        font-size: 1.05rem !important;
+    
+    /* Hero Layout Container Behind Heading */
+    .hero-banner {
+        background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 50%, #f0f9ff 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        padding: 28px 20px;
+        text-align: center;
+        box-shadow: 0 10px 30px -10px rgba(16, 185, 129, 0.12);
+        margin-bottom: 24px;
     }
+    
+    /* Reset & Reflection Chips */
     .reset-chip {
-        background: rgba(56, 189, 248, 0.12);
-        border-left: 4px solid #38bdf8;
+        background: #f0f9ff;
+        border-left: 5px solid #0284c7;
         padding: 16px;
         border-radius: 12px;
         margin: 14px 0;
-        font-size: 1.02rem;
+        font-size: 1rem;
         line-height: 1.6;
+        box-shadow: 0 2px 8px rgba(2, 132, 199, 0.05);
     }
+    
     .journal-chip {
-        background: rgba(168, 85, 247, 0.12);
-        border-left: 4px solid #a855f7;
+        background: #faf5ff;
+        border-left: 5px solid #9333ea;
         padding: 16px;
         border-radius: 12px;
         margin: 14px 0;
-        font-size: 1.02rem;
+        font-size: 1rem;
         line-height: 1.6;
+        box-shadow: 0 2px 8px rgba(147, 51, 234, 0.05);
     }
+    
+    .rag-badge {
+        background: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 0.88rem;
+        color: #047857 !important;
+        font-weight: 500;
+        margin-bottom: 14px;
+        display: inline-block;
+    }
+    
     .author-badge {
         font-size: 0.9rem;
-        color: #94a3b8 !important;
+        color: #64748b !important;
         text-align: center;
         margin-top: 1rem;
         font-weight: 500;
     }
+    
+    /* Custom Tab List Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #ffffff;
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px;
+        color: #475569 !important;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Sidebar with Creator Attribution & Controls
+# Sidebar with Creator Attribution & RAG Indicator
 with st.sidebar:
     st.markdown("## 🌿 Mitra AI")
     st.markdown("<p class='author-badge'>Made with ❤️ by <b>Sumit Agarwal</b></p>", unsafe_allow_html=True)
     st.divider()
-
     total_logs = fetch_total_count()
     st.metric(label="Total Wellness Check-ins", value=total_logs)
+    st.caption("🧠 **RAG Memory Engine:** ChromaDB Vector Search Enabled")
+    st.caption("✨ Light Serene Mode Active")
 
-    st.divider()
-    st.caption("Engineered for real-time energy alignment, mindfulness, and fast micro-resets.")
-
-# Main Interface Header
-st.markdown("<h1 style='text-align: center; font-size: 2.3rem; font-weight: 700;'>🌿 Mitra AI</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #94a3b8 !important; font-size: 1.1rem;'>Your personal companion for calm, mental clarity, and resets</p>", unsafe_allow_html=True)
+# Main Hero Layout Banner Behind Heading
+st.markdown("""
+<div class="hero-banner">
+    <h1 style="margin: 0; font-size: 2.4rem; font-weight: 700; color: #0f172a !important;">🌿 Mitra AI</h1>
+    <p style="margin-top: 8px; margin-bottom: 0; color: #475569 !important; font-size: 1.05rem;">
+        Your personal space for calm, mental clarity, and energetic resets
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 tab_chat, tab_analytics = st.tabs(["💬 Chat with Mitra", "📊 Mood History"])
 
@@ -89,18 +139,31 @@ with tab_chat:
             st.markdown(user_prompt)
 
         with st.chat_message("assistant", avatar="🌿"):
-            with st.spinner("Mitra is processing your response..."):
+            with st.spinner("Mitra is recalling vector memory & crafting your reset..."):
                 try:
-                    rec = analyze_vibe_and_recommend(user_prompt)
+                    # 1. Retrieve RAG Memory Context from ChromaDB
+                    rag_memory = retrieve_relevant_context(user_prompt, n_results=2)
+
+                    # 2. Generate LLM Analysis with RAG Context
+                    rec = analyze_vibe_and_recommend(user_prompt, rag_context=rag_memory)
+
+                    # 3. Save to SQL Database & ChromaDB Vector Store
                     save_checkin(user_prompt, rec)
+                    store_reflection(str(uuid.uuid4()), user_prompt, rec.mood_analysis)
+
+                    # Display RAG memory status indicator
+                    if rag_memory != "No prior relevant reflections found.":
+                        st.markdown("<div class='rag-badge'>🧠 <i>Recalled relevant past reflections via ChromaDB Vector Memory</i></div>", unsafe_allow_html=True)
 
                     st.markdown(f"**Vibe Assessment**\n\n{rec.mood_analysis}")
                     st.markdown(f"""
                     <div class="reset-chip">
-                        <strong style="color: #38bdf8 !important;">⚡ 2-Minute Micro Reset</strong><br>{rec.micro_exercise}
+                        <strong style="color: #0284c7 !important;">⚡ 2-Minute Micro Reset</strong><br>
+                        <span style="color: #334155 !important;">{rec.micro_exercise}</span>
                     </div>
                     <div class="journal-chip">
-                        <strong style="color: #a855f7 !important;">✍️ Reflection Prompt</strong><br><em>"{rec.journal_prompt}"</em>
+                        <strong style="color: #9333ea !important;">✍️ Reflection Prompt</strong><br>
+                        <span style="color: #334155 !important;"><em>"{rec.journal_prompt}"</em></span>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -110,7 +173,7 @@ with tab_chat:
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
-    # Persistent Recent History
+    # Persistent Recent Reflections Section
     st.divider()
     st.markdown("<h3 style='font-size: 1.3rem;'>📜 Recent Reflections</h3>", unsafe_allow_html=True)
     history = fetch_history()
