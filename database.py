@@ -30,23 +30,34 @@ def save_checkin(user_id: str, prompt: str, rec):
     conn.commit()
     conn.close()
 
-def fetch_history(user_id: str):
+def fetch_history(user_id: str = None):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT timestamp, prompt, mood_analysis, micro_exercise, journal_prompt, youtube_search_query 
-        FROM checkins 
-        WHERE user_id = ?
-        ORDER BY timestamp DESC
-    """, (user_id,))
+    if user_id:
+        cursor.execute("""
+            SELECT timestamp, prompt, mood_analysis, micro_exercise, journal_prompt, youtube_search_query 
+            FROM checkins 
+            WHERE user_id = ?
+            ORDER BY timestamp DESC
+        """, (user_id,))
+    else:
+        cursor.execute("""
+            SELECT timestamp, prompt, mood_analysis, micro_exercise, journal_prompt, youtube_search_query 
+            FROM checkins 
+            ORDER BY timestamp DESC
+        """)
     rows = cursor.fetchall()
     conn.close()
     return rows
 
-def fetch_total_count(user_id: str):
+def fetch_total_count(user_id: str = None):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM checkins WHERE user_id = ?", (user_id,))
-    count = cursor.fetchone()[0]
+    if user_id:
+        cursor.execute("SELECT COUNT(*) FROM checkins WHERE user_id = ?", (user_id,))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM checkins")
+    row = cursor.fetchone()
+    count = row[0] if row else 0
     conn.close()
     return count
