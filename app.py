@@ -1,5 +1,7 @@
 import uuid
+import re
 import streamlit as st
+import streamlit.components.v1 as components
 from agent import analyze_vibe_and_recommend
 from database import init_db, save_checkin, fetch_history, fetch_total_count
 from rag_memory import store_reflection, retrieve_relevant_context
@@ -15,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Adaptive CSS: Works seamlessly across BOTH Light and Dark Modes
+# Custom High-Contrast & Glassmorphism Styling
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
@@ -24,7 +26,6 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     
-    /* Hero Banner Layered Card */
     .hero-card {
         background: rgba(16, 185, 129, 0.08);
         border: 1px solid rgba(16, 185, 129, 0.2);
@@ -35,27 +36,24 @@ st.markdown("""
         backdrop-filter: blur(10px);
     }
     
-    /* Micro-Reset Card */
     .reset-chip {
         background: rgba(56, 189, 248, 0.1);
         border-left: 4px solid #38bdf8;
-        padding: 16px;
+        padding: 18px;
         border-radius: 12px;
-        margin: 14px 0;
-        line-height: 1.6;
+        margin: 16px 0;
+        line-height: 1.7;
     }
     
-    /* Journal Prompt Card */
     .journal-chip {
         background: rgba(168, 85, 247, 0.1);
         border-left: 4px solid #a855f7;
-        padding: 16px;
+        padding: 18px;
         border-radius: 12px;
-        margin: 14px 0;
-        line-height: 1.6;
+        margin: 16px 0;
+        line-height: 1.7;
     }
     
-    /* RAG Vector Memory Badge */
     .rag-badge {
         background: rgba(34, 197, 94, 0.12);
         border: 1px solid rgba(34, 197, 94, 0.3);
@@ -78,26 +76,41 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def speak_text(text_to_speak: str):
+    """Triggers native browser Text-to-Speech synthesis."""
+    clean_text = re.sub(r'[^\w\s.,!?-]', '', text_to_speak).replace('\n', ' ')
+    js_code = f"""
+        <script>
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance("{clean_text}");
+            utterance.rate = 0.92;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+        </script>
+    """
+    components.html(js_code, height=0)
+
 # Sidebar
 with st.sidebar:
     st.markdown("## 🌿 Mitra AI")
     st.markdown("<p class='author-badge'>Made with ❤️ by <b>Sumit Agarwal</b></p>", unsafe_allow_html=True)
     st.divider()
     total_logs = fetch_total_count()
-    st.metric(label="Total Check-ins Completed", value=total_logs)
-    st.caption("🧠 **RAG Memory Engine:** ChromaDB Vector Search")
+    st.metric(label="Total Wellness Check-ins", value=total_logs)
+    st.caption("🧠 **RAG Engine:** ChromaDB Memory Active")
+    st.caption("🎙️ **Voice Engine:** Web Speech Synthesis Active")
 
-# Hero Banner (Pure Streamlit + Adaptive CSS)
+# Hero Banner
 st.markdown("""
 <div class="hero-card">
     <h1 style="margin: 0; font-size: 2.2rem; font-weight: 700;">🌿 Mitra AI</h1>
     <p style="margin-top: 8px; margin-bottom: 0; opacity: 0.85; font-size: 1.05rem;">
-        Your personal companion for calm, mental clarity, and energetic resets
+        Your creative space for deep reflection, mindfulness, and audio resets
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-tab_chat, tab_analytics = st.tabs(["💬 Chat with Mitra", "📊 Mood History"])
+tab_chat, tab_analytics = st.tabs(["💬 Chat & Listen", "📊 Mood History"])
 
 with tab_chat:
     user_prompt = st.chat_input("Talk to Mitra... how is your day going?")
@@ -107,36 +120,37 @@ with tab_chat:
             st.markdown(user_prompt)
 
         with st.chat_message("assistant", avatar="🌿"):
-            with st.spinner("Mitra is recalling vector memory & crafting your reset..."):
+            with st.spinner("Mitra is listening deeply and weaving a creative response..."):
                 try:
-                    # 1. Retrieve RAG Memory Context from ChromaDB
                     rag_memory = retrieve_relevant_context(user_prompt, n_results=2)
-
-                    # 2. Generate LLM Analysis with RAG Context
                     rec = analyze_vibe_and_recommend(user_prompt, rag_context=rag_memory)
 
-                    # 3. Save to SQL Database & ChromaDB Vector Store
                     save_checkin(user_prompt, rec)
                     store_reflection(str(uuid.uuid4()), user_prompt, rec.mood_analysis)
 
-                    # Display RAG memory indicator if past context was found
                     if rag_memory != "No prior relevant reflections found.":
-                        st.markdown("<div class='rag-badge'>🧠 Recalled relevant past reflections via ChromaDB Vector Memory</div>", unsafe_allow_html=True)
+                        st.markdown("<div class='rag-badge'>🧠 Recalled relevant past reflections via ChromaDB</div>", unsafe_allow_html=True)
 
-                    st.markdown(f"**Vibe Assessment**\n\n{rec.mood_analysis}")
+                    st.markdown(f"**Deep Reflection**\n\n{rec.mood_analysis}")
+                    
                     st.markdown(f"""
                     <div class="reset-chip">
-                        <strong style="color: #38bdf8;">⚡ 2-Minute Micro Reset</strong><br>
+                        <strong style="color: #38bdf8; font-size: 1.05rem;">⚡ Sensory Reset Exercise</strong><br><br>
                         {rec.micro_exercise}
                     </div>
                     <div class="journal-chip">
-                        <strong style="color: #a855f7;">✍️ Reflection Prompt</strong><br>
+                        <strong style="color: #a855f7; font-size: 1.05rem;">✍️ Creative Exploration Prompt</strong><br><br>
                         <em>"{rec.journal_prompt}"</em>
                     </div>
                     """, unsafe_allow_html=True)
 
                     search_url = f"https://www.youtube.com/results?search_query={rec.youtube_search_query.replace(' ', '+')}"
-                    st.markdown(f"▶️ **YouTube Practice:** [{rec.youtube_search_query}]({search_url})")
+                    st.markdown(f"▶️ **Suggested Soundscape:** [{rec.youtube_search_query}]({search_url})")
+
+                    # Voice Output Trigger Button
+                    if st.button("🔊 Listen to Mitra"):
+                        audio_script = f"{rec.mood_analysis}. Here is your reset exercise: {rec.micro_exercise}"
+                        speak_text(audio_script)
 
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
