@@ -91,7 +91,7 @@ def speak_text(text_to_speak: str):
     components.html(js_code, height=0)
 
 def stop_speech():
-    """Immediately stops any active browser speech synthesis playback."""
+    """Immediately stops active browser speech synthesis playback."""
     js_code = """
         <script>
             window.speechSynthesis.cancel();
@@ -99,12 +99,19 @@ def stop_speech():
     """
     components.html(js_code, height=0)
 
+# Session State & User Isolation Initialization
+if "user_id" not in st.session_state:
+    st.session_state.user_id = str(uuid.uuid4())
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
 # Sidebar
 with st.sidebar:
     st.markdown("## 🌿 Mitra AI")
     st.markdown("<p class='author-badge'>Made with ❤️ by <b>Sumit Agarwal</b></p>", unsafe_allow_html=True)
     st.divider()
-    total_logs = fetch_total_count()
+    total_logs = fetch_total_count(st.session_state.user_id)
     st.metric(label="Total Wellness Check-ins", value=total_logs)
     st.caption("🧠 **RAG Engine:** ChromaDB Memory Active")
     st.caption("🎙️ **Voice Engine:** Microphone & Speech Synthesis Active")
@@ -119,14 +126,10 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Initialize Session State
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
 tab_chat, tab_analytics = st.tabs(["💬 Chat & Listen", "📊 Mood History"])
 
 with tab_chat:
-    # Render existing messages
+    # Display active chat session history
     for idx, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🌿"):
             if msg["role"] == "user":
@@ -153,7 +156,7 @@ with tab_chat:
                 search_url = f"https://www.youtube.com/results?search_query={rec['youtube_search_query'].replace(' ', '+')}"
                 st.markdown(f"▶️ **Suggested Soundscape:** [{rec['youtube_search_query']}]({search_url})")
 
-                # Voice Playback Controls (Listen / Stop)
+                # Voice Controls (Listen / Stop)
                 btn_col1, btn_col2 = st.columns([1, 1])
                 with btn_col1:
                     if st.button("🔊 Listen to Mitra", key=f"listen_{idx}"):
@@ -163,7 +166,7 @@ with tab_chat:
                     if st.button("🛑 Stop Listening", key=f"stop_{idx}"):
                         stop_speech()
 
-    # Inputs: Microphone Audio + Text Chat
+    # Audio & Text Inputs
     st.markdown("**Record your voice or type below:**")
     audio_val = st.audio_input("🎙️ Record Voice Check-in")
     user_prompt = st.chat_input("Talk to Mitra... how is your day going?")
@@ -188,11 +191,12 @@ with tab_chat:
         with st.chat_message("assistant", avatar="🌿"):
             with st.spinner("Mitra is listening deeply and weaving a creative response..."):
                 try:
-                    rag_memory = retrieve_relevant_context("recent emotional check-in" if is_audio_input else active_input, n_results=2)
+                    rag_query = "recent emotional check-in" if is_audio_input else active_input
+                    rag_memory = retrieve_relevant_context(rag_query, user_id=st.session_state.user_id, n_results=2)
                     rec = analyze_vibe_and_recommend(active_input, rag_context=rag_memory)
 
-                    save_checkin("🎙️ [Voice Input]" if is_audio_input else active_input, rec)
-                    store_reflection(str(uuid.uuid4()), "Voice Reflection" if is_audio_input else active_input, rec.mood_analysis)
+                    save_checkin(st.session_state.user_id, "🎙️ [Voice Input]" if is_audio_input else active_input, rec)
+                    store_reflection(str(uuid.uuid4()), st.session_state.user_id, "Voice Reflection" if is_audio_input else active_input, rec.mood_analysis)
 
                     rec_dict = {
                         "mood_analysis": rec.mood_analysis,
@@ -214,10 +218,10 @@ with tab_chat:
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
-    # History Section
+    # Isolated Recent Reflections Section
     st.divider()
     st.markdown("### 📜 Recent Reflections")
-    history = fetch_history()
+    history = fetch_history(st.session_state.user_id)
     if history:
         for item in history[:5]:
             timestamp, prompt, analysis, reset, journal, yt = item
@@ -232,7 +236,7 @@ with tab_chat:
 
 with tab_analytics:
     st.markdown("### 📊 Reflection Archive")
-    history = fetch_history()
+    history = fetch_history(st.session_state.user_id)
     if history:
         for item in history:
             timestamp, prompt, analysis, reset, journal, yt = item

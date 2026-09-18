@@ -1,7 +1,6 @@
 import sqlite3
-from datetime import datetime
 
-DB_NAME = "mitra.db"
+DB_NAME = "checkins.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -9,49 +8,45 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS checkins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            user_input TEXT,
+            user_id TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            prompt TEXT,
             mood_analysis TEXT,
             micro_exercise TEXT,
             journal_prompt TEXT,
-            youtube_query TEXT
+            youtube_search_query TEXT
         )
     """)
     conn.commit()
     conn.close()
 
-def save_checkin(user_input, rec):
+def save_checkin(user_id: str, prompt: str, rec):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO checkins (timestamp, user_input, mood_analysis, micro_exercise, journal_prompt, youtube_query)
+        INSERT INTO checkins (user_id, prompt, mood_analysis, micro_exercise, journal_prompt, youtube_search_query)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        user_input,
-        rec.mood_analysis,
-        rec.micro_exercise,
-        rec.journal_prompt,
-        rec.youtube_search_query
-    ))
+    """, (user_id, prompt, rec.mood_analysis, rec.micro_exercise, rec.journal_prompt, rec.youtube_search_query))
     conn.commit()
     conn.close()
 
-def fetch_history():
+def fetch_history(user_id: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT timestamp, user_input, mood_analysis, micro_exercise, journal_prompt, youtube_query 
-        FROM checkins ORDER BY id DESC
-    """)
+        SELECT timestamp, prompt, mood_analysis, micro_exercise, journal_prompt, youtube_search_query 
+        FROM checkins 
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+    """, (user_id,))
     rows = cursor.fetchall()
     conn.close()
     return rows
 
-def fetch_total_count():
+def fetch_total_count(user_id: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM checkins")
+    cursor.execute("SELECT COUNT(*) FROM checkins WHERE user_id = ?", (user_id,))
     count = cursor.fetchone()[0]
     conn.close()
     return count
