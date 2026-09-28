@@ -66,6 +66,18 @@ st.markdown("""
         display: inline-block;
     }
     
+    .vibe-chip {
+        background: rgba(245, 158, 11, 0.12);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        color: #f59e0b !important;
+        font-weight: 600;
+        display: inline-block;
+        margin-bottom: 12px;
+    }
+    
     .author-badge {
         font-size: 0.9rem;
         opacity: 0.8;
@@ -114,7 +126,8 @@ with st.sidebar:
     total_logs = fetch_total_count(st.session_state.user_id)
     st.metric(label="Total Wellness Check-ins", value=total_logs)
     st.caption("🧠 **RAG Engine:** ChromaDB Memory Active")
-    st.caption("🎙️ **Voice Engine:** Microphone & Speech Synthesis Active")
+    st.caption("📊 **Analytics:** Quantified Vibe Metrics Active")
+    st.caption("🎙️ **Voice Engine:** Speech Synthesis Active")
 
 # Hero Banner
 st.markdown("""
@@ -140,6 +153,17 @@ with tab_chat:
                 rec = msg["data"]
                 if msg.get("has_rag"):
                     st.markdown("<div class='rag-badge'>🧠 Recalled relevant past reflections via ChromaDB</div>", unsafe_allow_html=True)
+
+                # Vibe Telemetry Display
+                emotion = rec.get("dominant_emotion", "Neutral")
+                stress = rec.get("stress_level", 5)
+                energy = rec.get("energy_level", 5)
+                
+                st.markdown(f"""
+                <div class="vibe-chip">
+                    ✨ Vibe: <b>{emotion}</b> &nbsp;|&nbsp; Stress: <b>{stress}/10</b> &nbsp;|&nbsp; Energy: <b>{energy}/10</b>
+                </div>
+                """, unsafe_allow_html=True)
 
                 st.markdown(f"**Deep Reflection**\n\n{rec['mood_analysis']}")
                 st.markdown(f"""
@@ -202,7 +226,10 @@ with tab_chat:
                         "mood_analysis": rec.mood_analysis,
                         "micro_exercise": rec.micro_exercise,
                         "journal_prompt": rec.journal_prompt,
-                        "youtube_search_query": rec.youtube_search_query
+                        "youtube_search_query": rec.youtube_search_query,
+                        "stress_level": getattr(rec, 'stress_level', 5),
+                        "energy_level": getattr(rec, 'energy_level', 5),
+                        "dominant_emotion": getattr(rec, 'dominant_emotion', 'Neutral')
                     }
 
                     has_rag = (rag_memory != "No prior relevant reflections found.")
@@ -224,8 +251,12 @@ with tab_chat:
     history = fetch_history(st.session_state.user_id)
     if history:
         for item in history[:5]:
-            timestamp, prompt, analysis, reset, journal, yt = item
-            with st.expander(f"🗓️ {timestamp} - {prompt[:40]}..."):
+            timestamp, prompt, analysis, reset, journal, yt = item[:6]
+            stress = item[6] if len(item) > 6 else 5
+            energy = item[7] if len(item) > 7 else 5
+            emotion = item[8] if len(item) > 8 else "Neutral"
+            
+            with st.expander(f"🗓️ {timestamp[:16]} | Vibe: {emotion} (Stress: {stress}/10)"):
                 st.write(f"**Your Note:** {prompt}")
                 st.write(f"**Mitra's Assessment:** {analysis}")
                 st.info(f"**Reset:** {reset}")
@@ -235,13 +266,48 @@ with tab_chat:
         st.caption("No check-ins logged yet. Send a message above to get started!")
 
 with tab_analytics:
-    st.markdown("### 📊 Reflection Archive")
+    st.markdown("### 📊 Personal Emotional Trajectory")
     history = fetch_history(st.session_state.user_id)
+    
     if history:
+        # Prepare data for metrics & trajectory plotting
+        stress_levels = [item[6] if len(item) > 6 else 5 for item in reversed(history)]
+        energy_levels = [item[7] if len(item) > 7 else 5 for item in reversed(history)]
+        emotions = [item[8] if len(item) > 8 else 'Neutral' for item in history]
+
+        # Key Telemetry Metrics Row
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            avg_stress = round(sum(stress_levels) / len(stress_levels), 1)
+            st.metric(label="Avg Stress Level", value=f"{avg_stress} / 10")
+        with col2:
+            avg_energy = round(sum(energy_levels) / len(energy_levels), 1)
+            st.metric(label="Avg Energy Level", value=f"{avg_energy} / 10")
+        with col3:
+            latest_emotion = emotions[0] if emotions else "Neutral"
+            st.metric(label="Latest Vibe Tag", value=latest_emotion)
+
+        st.divider()
+        st.markdown("#### 📈 Stress vs. Energy Trends Over Time")
+        
+        # Interactive Line Chart
+        chart_data = {
+            "Stress Level": stress_levels,
+            "Energy Level": energy_levels
+        }
+        st.line_chart(chart_data)
+
+        st.divider()
+        st.markdown("#### 📜 Full Reflection Archive")
         for item in history:
-            timestamp, prompt, analysis, reset, journal, yt = item
-            st.markdown(f"**{timestamp}**")
-            st.caption(f"Prompt: \"{journal}\"")
+            ts, prompt, analysis, reset, journal, yt = item[:6]
+            stress = item[6] if len(item) > 6 else 5
+            energy = item[7] if len(item) > 7 else 5
+            emotion = item[8] if len(item) > 8 else "Neutral"
+            
+            st.markdown(f"**{ts[:16]}** — *Vibe: {emotion}* | Stress: **{stress}/10** | Energy: **{energy}/10**")
+            st.caption(f"**Reflection:** {prompt}")
+            st.caption(f"**Prompt:** \"{journal}\"")
             st.divider()
     else:
-        st.caption("Archive empty.")
+        st.caption("Archive empty. Complete a check-in on the Chat tab to start tracking your trajectory!")

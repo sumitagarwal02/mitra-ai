@@ -20,6 +20,15 @@ class VibeResponse(BaseModel):
     youtube_search_query: str = Field(
         description="A specific search term for ambient soundscapes, guided meditation, or therapeutic music."
     )
+    stress_level: int = Field(
+        description="An integer rating from 1 (deep calm/peace) to 10 (extreme anxiety/overwhelm)."
+    )
+    energy_level: int = Field(
+        description="An integer rating from 1 (completely drained/exhausted) to 10 (vibrant/high energy)."
+    )
+    dominant_emotion: str = Field(
+        description="A 1-2 word tag for the primary emotion detected (e.g., Anxious, Hopeful, Exhausted, Peaceful, Overwhelmed)."
+    )
 
 def analyze_vibe_and_recommend(user_input, rag_context: str = "") -> VibeResponse:
     print("--> Starting Gemini API Request...")
@@ -32,17 +41,14 @@ def analyze_vibe_and_recommend(user_input, rag_context: str = "") -> VibeRespons
     - If input is audio, listen carefully to what the user said and address their spoken feelings with deep care.
     - Avoid brief or superficial advice. Paint vivid mental images, use gentle metaphors, and explore feelings with depth and warmth.
     - Craft sensory-rich somatic resets (guided visualizations, deep breathing with imagery, sensory grounding).
-    - Maintain a deeply comforting, non-clinical tone that feels like a wise, compassionate friend.
+    - Accurately evaluate and score stress_level (1-10), energy_level (1-10), and dominant_emotion based on user tone and context.
     - Subtly weave in relevant past memory patterns if RAG context is provided.
     """
 
     contents = []
     if isinstance(user_input, bytes):
         contents.append(
-            types.Part.from_bytes(
-                data=user_input,
-                mime_type="audio/wav"
-            )
+            types.Part.from_bytes(data=user_input, mime_type="audio/wav")
         )
         contents.append(f"Listen to this audio voice check-in and respond.\nRelevant Semantic Memory (Past RAG Context): {rag_context}")
     else:
