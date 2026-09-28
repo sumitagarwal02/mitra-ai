@@ -1,79 +1,70 @@
-import os
 import time
+import os
+import google.generativeai as genai
 from pydantic import BaseModel, Field
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
 
-load_dotenv()
+# Ensure API Key is set
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-class VibeResponse(BaseModel):
-    mood_analysis: str = Field(
-        description="A deep, highly creative, and empathetic exploration of the user's feelings using vivid imagery, comforting metaphors, and rich validation across 2-3 descriptive paragraphs."
-    )
-    micro_exercise: str = Field(
-        description="An imaginative, step-by-step somatic reset or guided visualization exercise that deeply engages all five senses."
-    )
-    journal_prompt: str = Field(
-        description="Two evocative, deep reflection prompts for creative self-discovery and expressive storytelling."
-    )
-    youtube_search_query: str = Field(
-        description="A specific search term for ambient soundscapes, guided meditation, or therapeutic music."
-    )
-    stress_level: int = Field(
-        description="An integer rating from 1 (deep calm/peace) to 10 (extreme anxiety/overwhelm)."
-    )
-    energy_level: int = Field(
-        description="An integer rating from 1 (completely drained/exhausted) to 10 (vibrant/high energy)."
-    )
-    dominant_emotion: str = Field(
-        description="A 1-2 word tag for the primary emotion detected (e.g., Anxious, Hopeful, Exhausted, Peaceful, Overwhelmed)."
-    )
+class VibeRecommendation(BaseModel):
+    mood_analysis: str = Field(description="Empathetic, deep reflection on the user's check-in")
+    micro_exercise: str = Field(description="A quick 1-2 minute sensory reset exercise")
+    journal_prompt: str = Field(description="A reflective journal prompt for further exploration")
+    youtube_search_query: str = Field(description="Targeted YouTube search query for calming ambient audio")
+    stress_level: int = Field(description="Estimated stress level from 1 (lowest) to 10 (highest)")
+    energy_level: int = Field(description="Estimated energy level from 1 (lowest) to 10 (highest)")
+    dominant_emotion: str = Field(description="Single dominant emotion word, e.g., Anxious, Calm, Exhausted")
 
-def analyze_vibe_and_recommend(user_input, rag_context: str = "") -> VibeResponse:
-    print("--> Starting Gemini API Request...")
-    api_key = os.getenv("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key)
-
-    system_instruction = """
-    You are Mitra, an extraordinarily intuitive, warm, and poetic AI wellness companion.
-    Your goal is to offer rich, descriptive, and imaginative support:
-    - If input is audio, listen carefully to what the user said and address their spoken feelings with deep care.
-    - Avoid brief or superficial advice. Paint vivid mental images, use gentle metaphors, and explore feelings with depth and warmth.
-    - Craft sensory-rich somatic resets (guided visualizations, deep breathing with imagery, sensory grounding).
-    - Accurately evaluate and score stress_level (1-10), energy_level (1-10), and dominant_emotion based on user tone and context.
-    - Subtly weave in relevant past memory patterns if RAG context is provided.
+def analyze_vibe_and_recommend(user_input: str, rag_context: str = "", max_retries: int = 3) -> VibeRecommendation:
+    """
+    Analyzes user check-in with automatic retry logic and fallback models 
+    to handle transient 503 UNAVAILABLE errors gracefully.
+    """
+    # Models to try in order of preference
+    models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    
+    prompt_text = f"""
+    You are Mitra, a compassionate and perceptive AI wellness companion.
+    
+    Past Context:
+    {rag_context}
+    
+    User Check-in:
+    {user_input}
+    
+    Analyze the user's current vibe, estimate stress and energy levels (1-10), identify the dominant emotion,
+    and provide an empathetic reflection, a micro reset exercise, a journal prompt, and a soundscape search query.
     """
 
-    contents = []
-    if isinstance(user_input, bytes):
-        contents.append(
-            types.Part.from_bytes(data=user_input, mime_type="audio/wav")
-        )
-        contents.append(f"Listen to this audio voice check-in and respond.\nRelevant Semantic Memory (Past RAG Context): {rag_context}")
-    else:
-        contents.append(f"User Current Input: {user_input}\nRelevant Semantic Memory (Past RAG Context): {rag_context}")
+    last_exception = None
 
-    model_name = "gemini-3.6-flash"
-    
-    for attempt in range(2):
-        try:
-            print(f"--> Attempt {attempt + 1}: Calling {model_name}...")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=VibeResponse,
-                    temperature=0.85,
+    for model_name in models_to_try:
+        model = genai.GenerativeModel(model_name)
+        
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(
+                    prompt_text,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json",
+                        response_schema=VibeRecommendation
+                    )
                 )
-            )
-            print("--> Response received successfully!")
-            return VibeResponse.model_validate_json(response.text)
-        except Exception as e:
-            print(f"--> Error on attempt {attempt + 1}: {str(e)}")
-            if attempt < 1:
-                time.sleep(2)
-            else:
-                raise e
+                # Parse structured JSON output
+                return VibeRecommendation.model_validate_json(response.text)
+                
+            except Exception as e:
+                error_str = str(e)
+                last_exception = e
+                # Check for 503 UNAVAILABLE or rate limit
+                if "503" in error_str or "UNAVAILABLE" in error_str or "429" in error_str:
+                    wait_time = (attempt + 1) * 2  # Exponential backoff (2s, 4s, 6s)
+                    time.sleep(wait_time)
+                else:
+                    # Non-503 error, break inner loop to try next model fallback
+                    break
+
+    # If all models and retries fail, raise a clean error message
+    raise RuntimeError(
+        "The AI model service is currently experiencing high demand. Please try sending your message again in a few seconds."
+    )
